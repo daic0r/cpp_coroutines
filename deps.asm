@@ -4,6 +4,7 @@
 	global switch_context
 	
 switch_context:
+	
 	push rbx
 	push rbp
 	push r12
@@ -11,11 +12,8 @@ switch_context:
 	push r14
 	push r15
 
-	mov rax, 1
-	mov rdi, 1
-	lea rsi, [hello]
-	mov rdx, 15
-	syscall
+	mov [rdi], rsp 		; save current rsp for later resumption
+	mov rsp, rsi		; resume other coroutine
 	
 	pop r15
 	pop r14
@@ -24,6 +22,7 @@ switch_context:
 	pop rbp
 	pop rbx
 	ret
+	
 
 	section .data
 hello:	db "Hello, world!\n", 0

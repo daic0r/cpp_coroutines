@@ -1,9 +1,9 @@
 #include <iostream>
 #include <cstdint>
 #include <cstring>
+#include "coroutine.hpp"
 
-extern "C" void switch_context();
-
+/*
 int f(int a, int b) {
   volatile void *ptr;
   std::ptrdiff_t rbp, rsp;
@@ -29,6 +29,16 @@ int f(int a, int b) {
   return a + b;
 }
 
+__attribute__((noinline)) void test_func(ice::coroutine* coro) {
+  int i = 4;
+  static_assert(sizeof(int) == 4, "wrong size for int");
+  std::cout << "i sitting at " << std::dec << (std::ptrdiff_t) &i << "\n";
+
+  co_yield();
+  
+  std::cout << "Coroutine resumed\n";
+}
+
 int main() {
 
   std::ptrdiff_t rbp, rsp;
@@ -42,10 +52,32 @@ int main() {
 		:
 		:
 		);
-  std::cout << "rbp = " << rbp << "\n";
+  std::cout << std::hex << "rbp = " << rbp << "\n";
   std::cout << "rsp = " << rsp << std::endl;
 
-  switch_context();
+  co_init();
+  std::cout << std::dec << "Stack frame at " << (std::ptrdiff_t)coro.stack_frame << "\n";
+  test_func(&coro);
+
+  std::cout << "Coroutine suspended\n";
   
-  return f(5, 4);
+  return 0;
+}
+*/
+
+void func(ice::coroutine& coro) {
+  std::cout << "Entered coroutine\n";
+  ice::co_suspend(coro);
+  std::cout << "Resumed coroutine!\n";
+}
+
+int main() {
+  auto coro = ice::make_coroutine(&func);
+  ice::current_coro = &coro;
+  ice::co_resume(coro);
+  std::cout << "Coroutine suspended, we can do more work in main\n";
+  ice::co_resume(coro);
+  ice::co_destroy(coro);
+
+  return 0;
 }
