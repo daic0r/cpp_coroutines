@@ -2,35 +2,17 @@
 #define COROUTINE_HPP
 
 #include <iostream>
-#include <cstring>
-#include <cstdint>
 #include <functional>
+#include <cassert>
 
-extern "C" void switch_context(void*, void*);
+extern "C" void switch_context(void** save_rsp, void* load_rsp);
 
-
-/*
-
-define co_init(coroutine* pCoro)
-     asm_init_coroutine(&pCoro->stack_frame);
-
-void coro(coroutine* pCoro) {
-   co_init(pCoro);
-}
-
-define run_coro()
-    asm_run_coro(&pCoro->stack_frame);
-  
-void A() {
-  coroutine c = run_coro(B());
-}
-*/
 namespace ice {
   static constexpr std::size_t STACK_SIZE = 1024*16;
 
   struct coroutine {
     char *buffer_ptr;
-    char *sp;
+    void *sp;
     void *caller_sp;
     void (*func)(coroutine&);
     bool done = false;
@@ -46,6 +28,7 @@ namespace ice {
   }
 
   void co_resume(coroutine& coro) {
+    assert(!coro.done);
     current_coro = &coro;
     switch_context(&current_coro->caller_sp, current_coro->sp);
   }
@@ -57,12 +40,11 @@ namespace ice {
 
   coroutine make_coroutine(void(*func)(coroutine&)) {
     coroutine ret{};
-    ret.sp = new char[STACK_SIZE];
-    ret.buffer_ptr = ret.sp;
-    ret.sp += STACK_SIZE;
+    ret.buffer_ptr = new char[STACK_SIZE];
+    ret.sp = ret.buffer_ptr + STACK_SIZE;
     ret.func = func;
     
-    std::ptrdiff_t aligned_top = reinterpret_cast<std::ptrdiff_t>(ret.sp + STACK_SIZE) & ~std::ptrdiff_t{15};
+    std::ptrdiff_t aligned_top = reinterpret_cast<std::ptrdiff_t>(static_cast<char*>(ret.sp) + STACK_SIZE) & ~std::ptrdiff_t{15};
     
     void** sp = reinterpret_cast<void**>(aligned_top);
     *--sp = nullptr;
