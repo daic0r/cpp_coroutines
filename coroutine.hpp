@@ -6,6 +6,7 @@
 #include <cassert>
 
 extern "C" void switch_context(void** save_rsp, void* load_rsp);
+extern "C" void co_finish_trampoline();
 
 namespace ice {
   static constexpr std::size_t STACK_SIZE = 1024*16;
@@ -14,7 +15,7 @@ namespace ice {
     char *buffer_ptr;
     void *sp;
     void *caller_sp;
-    void (*func)(coroutine&);
+    std::function<void(coroutine&)> func;
     bool done = false;
   };
 
@@ -22,6 +23,8 @@ namespace ice {
 
   void co_invoke() {
     current_coro->func(*current_coro);
+  }
+  extern "C" void co_finish() {
     current_coro->done = true;
     switch_context(&current_coro->sp, current_coro->caller_sp);
     std::abort(); // should never be reached
@@ -38,22 +41,22 @@ namespace ice {
     switch_context(&current_coro->sp, current_coro->caller_sp);
   }
 
-  coroutine make_coroutine(void(*func)(coroutine&)) {
+  coroutine make_coroutine(std::function<void(coroutine&)> func) {
     coroutine ret{};
     ret.buffer_ptr = new char[STACK_SIZE];
     ret.sp = ret.buffer_ptr + STACK_SIZE;
-    ret.func = func;
+    ret.func = std::move(func);
     
     std::ptrdiff_t aligned_top = reinterpret_cast<std::ptrdiff_t>(static_cast<char*>(ret.sp) + STACK_SIZE) & ~std::ptrdiff_t{15};
     
     void** sp = reinterpret_cast<void**>(aligned_top);
-    *--sp = nullptr;
+    *--sp = reinterpret_cast<void*>(&co_finish_trampoline);
     *--sp = reinterpret_cast<void*>(&co_invoke);
     
     for (std::size_t i{}; i < 6; ++i)
       *--sp = nullptr;
 
-    ret.sp = reinterpret_cast<char*>(sp);
+    ret.sp = reinterpret_cast<void*>(sp);
     
     return ret;
   }

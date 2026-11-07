@@ -78,6 +78,7 @@ int main() {
   std::cout << "Coroutine suspended, we can do more work in main\n";
   ice::co_resume(coro);
   ice::co_destroy(coro);
+  std::cout << "Coroutine finished execution\n";
 
   return 0;
 }

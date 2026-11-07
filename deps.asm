@@ -2,6 +2,8 @@
 	
 	section .text
 	global switch_context
+	global co_finish_trampoline
+	extern co_finish
 	
 switch_context:
 	
@@ -23,6 +25,7 @@ switch_context:
 	pop rbx
 	ret
 	
+co_finish_trampoline:
 
-	section .data
-hello:	db "Hello, world!\n", 0
+	call co_finish wrt ..plt
+	ud2
