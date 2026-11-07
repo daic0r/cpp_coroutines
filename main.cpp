@@ -65,19 +65,29 @@ int main() {
 }
 */
 
-void func(ice::coroutine& coro) {
+void func(ice::coroutine<int>& coro) {
   std::cout << "Entered coroutine\n";
-  ice::co_suspend(coro);
+  //  ice::co_suspend(coro);
+  coro.yield(23);
   std::cout << "Resumed coroutine!\n";
 }
 
 int main() {
-  auto coro = ice::make_coroutine(&func);
-  ice::current_coro = &coro;
+  
+  auto coro = ice::coroutine<int>(func);
+  /*
+ice::current_coro = &coro;
   ice::co_resume(coro);
   std::cout << "Coroutine suspended, we can do more work in main\n";
   ice::co_resume(coro);
   ice::co_destroy(coro);
+  std::cout << "Coroutine finished execution\n";
+  */
+  //  coro.resume();
+  std::cout << "Coroutine suspended, we can do more work in main\n";
+  std::cout << "Coroutine generated value: " << coro.get_value() << "\n";
+  coro.resume();
+  coro.destroy();
   std::cout << "Coroutine finished execution\n";
 
   return 0;

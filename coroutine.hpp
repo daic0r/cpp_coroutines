@@ -4,6 +4,7 @@
 #include <iostream>
 #include <functional>
 #include <cassert>
+#include <optional>
 
 extern "C" void switch_context(void** save_rsp, void* load_rsp);
 extern "C" void co_finish_trampoline();
@@ -11,6 +12,7 @@ extern "C" void co_finish_trampoline();
 namespace ice {
   static constexpr std::size_t STACK_SIZE = 1024*16;
 
+  /*
   struct coroutine {
     char *buffer_ptr;
     void *sp;
@@ -18,52 +20,94 @@ namespace ice {
     std::function<void(coroutine&)> func;
     bool done = false;
   };
+  */
 
-  coroutine* current_coro{};
+  class coroutine_base;
 
-  void co_invoke() {
-    current_coro->func(*current_coro);
+  extern coroutine_base* current_coro;
+
+  namespace detail {
+    void co_invoke();
+    extern "C" void co_finish();
   }
-  extern "C" void co_finish() {
-    current_coro->done = true;
-    switch_context(&current_coro->sp, current_coro->caller_sp);
-    std::abort(); // should never be reached
-  }
+  
 
-  void co_resume(coroutine& coro) {
-    assert(!coro.done);
-    current_coro = &coro;
-    switch_context(&current_coro->caller_sp, current_coro->sp);
-  }
-
-  void co_suspend(coroutine& coro) {
-    current_coro = &coro;
-    switch_context(&current_coro->sp, current_coro->caller_sp);
-  }
-
-  coroutine make_coroutine(std::function<void(coroutine&)> func) {
-    coroutine ret{};
-    ret.buffer_ptr = new char[STACK_SIZE];
-    ret.sp = ret.buffer_ptr + STACK_SIZE;
-    ret.func = std::move(func);
+  class coroutine_base {
+    friend void detail::co_finish();
+    friend void detail::co_invoke();
     
-    std::ptrdiff_t aligned_top = reinterpret_cast<std::ptrdiff_t>(static_cast<char*>(ret.sp) + STACK_SIZE) & ~std::ptrdiff_t{15};
+    char *stack_frame_{};
+    void *sp_{};
+    void *caller_sp_{};
+    std::function<void(coroutine_base&)> func_{};
+    bool done_{};
     
-    void** sp = reinterpret_cast<void**>(aligned_top);
-    *--sp = reinterpret_cast<void*>(&co_finish_trampoline);
-    *--sp = reinterpret_cast<void*>(&co_invoke);
-    
-    for (std::size_t i{}; i < 6; ++i)
-      *--sp = nullptr;
+  protected:
+    coroutine_base(std::function<void(coroutine_base&)> func);
 
-    ret.sp = reinterpret_cast<void*>(sp);
-    
-    return ret;
-  }
+  public:
+    virtual ~coroutine_base() {
+      if (stack_frame_) {
+	destroy();
+      }
+    }
 
-  void co_destroy(coroutine& coro) {
-    delete[] coro.buffer_ptr;
-  }
-}
+    bool done() const noexcept {
+      return done_;
+    }
+
+    void resume() {
+      assert(!done());
+      current_coro = this;
+      switch_context(&caller_sp_, sp_);
+    }
+
+    void suspend() {
+      current_coro = this;
+      switch_context(&sp_, caller_sp_);
+    }
+
+    void destroy() {
+      delete[] stack_frame_;
+      stack_frame_ = nullptr;
+    }
+
+    
+    
+  };
+
+  template<typename Ret>
+  class coroutine : public coroutine_base {
+    std::optional<Ret> value_;
+    
+  public:
+    coroutine(std::function<void(coroutine&)> func)
+      : coroutine_base([f=std::move(func)](coroutine_base& c) { f(static_cast<coroutine&>(c)); })
+    {
+      resume();
+    }
+
+    Ret get_value() {
+      assert(value_.has_value());
+      return std::move(*value_);
+    }
+
+    void yield(Ret val) {
+      value_ = std::move(val);
+      suspend();
+    }
+  };
+
+
+  template<>
+  class coroutine<void> : public coroutine_base {
+  public:
+    coroutine(std::function<void(coroutine&)> func)
+      : coroutine_base([f=std::move(func)](coroutine_base& c) { f(static_cast<coroutine&>(c)); })
+    {}
+  };
+
+
+} // namespace
 
 #endif
