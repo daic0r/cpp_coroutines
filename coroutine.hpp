@@ -103,15 +103,43 @@ namespace ice {
     }
   };
 
-
-  template<typename Yield, typename Ret>
-  class coroutine : public coroutine_base {
+  template<typename Ret, typename Yield>
+  class coroutine_data_layer : public coroutine_base {
+  protected:
+    using coroutine_base::coroutine_base;
     std::optional<Yield> yielded_;
     std::optional<Ret> returned_;
+  };
+
+  template<>
+  class coroutine_data_layer<void, void> : public coroutine_base {
+    using coroutine_base::coroutine_base;
+    
+  };
+
+  template<typename Ret>
+  class coroutine_data_layer<Ret, void> : public coroutine_base {
+  protected:
+    using coroutine_base::coroutine_base;
+    
+    std::optional<Ret> returned_;
+  };
+
+
+  template<typename Yield>
+  class coroutine_data_layer<void, Yield> : public coroutine_base {
+  protected:
+    using coroutine_base::coroutine_base;
+    
+    std::optional<Yield> yielded_;
+  };
+
+  template<typename Ret, typename Yield = void>
+  class coroutine : public coroutine_data_layer<Ret, Yield> {
 
     template<typename F, typename R = Ret>
     auto run(coroutine_base& c, F f) -> typename std::enable_if_t<!std::is_same_v<R, void>> {
-      returned_ = f(static_cast<coroutine&>(c));
+      this->returned_ = f(static_cast<coroutine&>(c));
     }
 
     template<typename F, typename R = Ret>
@@ -121,8 +149,8 @@ namespace ice {
 
   public:
     coroutine(std::function<Ret(coroutine&)> func)
-      : coroutine_base([f=std::move(func), this](coroutine_base& c) {
-	/*
+      : coroutine_data_layer<Ret, Yield>([f=std::move(func), this](coroutine_base& c) {
+	/*p
 	if constexpr (std::is_same_v<Ret, void>) {
 	  f(static_cast<coroutine&>(c));
 	} else {
@@ -136,19 +164,31 @@ namespace ice {
 
     template<typename Y = Yield, typename = std::enable_if_t<!std::is_same_v<Y, void>>>
     Y get_value() {
-      assert(yielded_.has_value());
-      return std::move(*yielded_);
+      assert(this->yielded_.has_value());
+      return std::move(*this->yielded_);
     }
 
     template<typename R = Ret, typename = std::enable_if_t<!std::is_same_v<R, void>>>
     R get_return_value() {
-      assert(returned_.has_value());
-      return std::move(*returned_);
+      assert(this->returned_.has_value());
+      return std::move(*this->returned_);
     }
 
-    void yield(Yield val) {
-      yielded_ = std::move(val);
-      suspend();
+    template<typename Y = Yield, typename = std::enable_if_t<!std::is_same_v<Y, void>>>
+    void yield(Y val) {
+      this->yielded_ = std::move(val);
+      this->suspend();
+    }
+
+    template<typename Awaitable>
+    auto await(Awaitable a) -> typename std::invoke_result_t<decltype(&Awaitable::get_result), Awaitable*>
+    {
+      if (a.result_available())
+	return a.get_result();
+      a.will_suspend();
+      this->suspend();
+      //      assert(a.result_available());
+      return a.get_result();
     }
   };
 

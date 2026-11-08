@@ -3,6 +3,10 @@
 #include <cstring>
 #include "coroutine.hpp"
 #include <string>
+#include <future>
+#include <thread>
+
+using namespace std::literals;
 
 /*
 int f(int a, int b) {
@@ -66,16 +70,45 @@ int main() {
 }
 */
 
-std::string func(ice::coroutine<int, std::string>& coro) {
+std::string func(ice::coroutine<std::string, int>& coro) {
   std::cout << "Entered coroutine\n";
   coro.yield(23);
   std::cout << "Resumed coroutine!\n";
   return "Test return";
 }
 
+std::promise<std::string> prom;
+std::optional<std::thread> worker;
+std::future<std::string> mains_future;
+
+auto fetch_data() {
+  struct awaitable {
+    bool result_available() const noexcept { return false; }
+    void will_suspend() const noexcept {
+      mains_future = prom.get_future();
+      worker = std::thread([] {
+	std::this_thread::sleep_for(3000ms);
+	prom.set_value("#### DATA ####");
+      });
+    }
+    std::string get_result() const noexcept {
+      return mains_future.get();
+    }
+  };
+  return awaitable{};
+}
+
+std::string await_test(ice::coroutine<std::string>& coro) {
+  std::cout << "await_test: About to receive data which will take some time\n";
+  const auto data = coro.await(fetch_data());
+  std::cout << "Data was received: \"" << data << "\"\n";
+  return data;
+}
+
+		       
 int main() {
-  
-  auto coro = ice::coroutine<int, std::string>(func);
+			  
+  auto coro = ice::coroutine<std::string, int>(func);
   /*
 ice::current_coro = &coro;
   ice::co_resume(coro);
@@ -92,6 +125,13 @@ ice::current_coro = &coro;
     std::cout << "Coroutine returned " << coro.get_return_value() << "\n";
   }
   std::cout << "Coroutine finished execution\n";
+
+
+  ice::coroutine<std::string> await_coro(await_test);
+  await_coro.resume();
+  worker->join();
+  await_coro.resume();
+  std::cout << "Function result: " << await_coro.get_return_value() << "\n";
 
   return 0;
 }
