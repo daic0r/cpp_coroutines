@@ -29,6 +29,24 @@ namespace ice {
   namespace detail {
     void co_invoke();
     extern "C" void co_finish();
+
+    template<typename T>
+    struct data_slot {
+      std::optional<T> data_;
+    public:
+      data_slot() = default;
+      template<typename U = T>
+      data_slot(U&& u) : data_{ std::forward<U>(u) } {}
+
+      void set(T val) { data_ = std::move(val); }
+      T take() { assert(data_); T ret = std::move(*data_); data_.reset(); return ret; }
+      bool empty() const noexcept { return !data_.has_value(); }
+    };
+
+    template<>
+    struct data_slot<void> {
+    };
+
   }
   
 
@@ -58,12 +76,13 @@ namespace ice {
 
     void resume() {
       assert(!done());
+      const auto pPrev = current_coro;
       current_coro = this;
       switch_context(&caller_sp_, sp_);
+      current_coro = pPrev;
     }
 
     void suspend() {
-      current_coro = this;
       switch_context(&sp_, caller_sp_);
     }
 
@@ -71,42 +90,43 @@ namespace ice {
       delete[] stack_frame_;
       stack_frame_ = nullptr;
     }
-
-    
-    
   };
 
-  template<typename Ret>
+
+  template<typename Yield, typename Ret>
   class coroutine : public coroutine_base {
-    std::optional<Ret> value_;
+    detail::data_slot<Yield> yielded_;
+    detail::data_slot<Ret> returned_;
     
   public:
-    coroutine(std::function<void(coroutine&)> func)
-      : coroutine_base([f=std::move(func)](coroutine_base& c) { f(static_cast<coroutine&>(c)); })
+    coroutine(std::function<Ret(coroutine&)> func)
+      : coroutine_base([f=std::move(func), this](coroutine_base& c) {
+	if constexpr (std::is_same_v<Ret, void>) {
+	  f(static_cast<coroutine&>(c));
+	} else {
+	  returned_.set(f(static_cast<coroutine&>(c)));
+	}
+      })
     {
-      resume();
     }
 
-    Ret get_value() {
-      assert(value_.has_value());
-      return std::move(*value_);
+    template<typename Y = Yield, typename = std::enable_if_t<!std::is_same_v<Y, void>>>
+    Y get_value() {
+      assert(!yielded_.empty());
+      return yielded_.take();
     }
 
-    void yield(Ret val) {
-      value_ = std::move(val);
+    template<typename R = Ret, typename = std::enable_if_t<!std::is_same_v<R, void>>>
+    R get_return_value() {
+      assert(!returned_.empty());
+      return returned_.take();
+    }
+
+    void yield(Yield val) {
+      yielded_ = std::move(val);
       suspend();
     }
   };
-
-
-  template<>
-  class coroutine<void> : public coroutine_base {
-  public:
-    coroutine(std::function<void(coroutine&)> func)
-      : coroutine_base([f=std::move(func)](coroutine_base& c) { f(static_cast<coroutine&>(c)); })
-    {}
-  };
-
 
 } // namespace
 

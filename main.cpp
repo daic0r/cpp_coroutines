@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include "coroutine.hpp"
+#include <string>
 
 /*
 int f(int a, int b) {
@@ -65,16 +66,17 @@ int main() {
 }
 */
 
-void func(ice::coroutine<int>& coro) {
+std::string func(ice::coroutine<int, std::string>& coro) {
   std::cout << "Entered coroutine\n";
   //  ice::co_suspend(coro);
   coro.yield(23);
   std::cout << "Resumed coroutine!\n";
+  return "Ficken";
 }
 
 int main() {
   
-  auto coro = ice::coroutine<int>(func);
+  auto coro = ice::coroutine<int, std::string>(func);
   /*
 ice::current_coro = &coro;
   ice::co_resume(coro);
@@ -83,11 +85,13 @@ ice::current_coro = &coro;
   ice::co_destroy(coro);
   std::cout << "Coroutine finished execution\n";
   */
-  //  coro.resume();
+  coro.resume();
   std::cout << "Coroutine suspended, we can do more work in main\n";
   std::cout << "Coroutine generated value: " << coro.get_value() << "\n";
   coro.resume();
-  coro.destroy();
+  if (coro.done()) {
+    std::cout << "Coroutine returned " << coro.get_return_value() << "\n";
+  }
   std::cout << "Coroutine finished execution\n";
 
   return 0;

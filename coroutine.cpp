@@ -19,9 +19,8 @@ namespace ice {
     {
 
       stack_frame_ = new char[STACK_SIZE];
-      sp_ = stack_frame_ + STACK_SIZE;
     
-      std::ptrdiff_t aligned_top = reinterpret_cast<std::ptrdiff_t>(static_cast<char*>(sp_) + STACK_SIZE) & ~std::ptrdiff_t{15};
+      std::ptrdiff_t aligned_top = reinterpret_cast<std::ptrdiff_t>(stack_frame_ + STACK_SIZE) & ~std::ptrdiff_t{15};
     
       void** sp = reinterpret_cast<void**>(aligned_top);
       *--sp = reinterpret_cast<void*>(&co_finish_trampoline);
