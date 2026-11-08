@@ -68,10 +68,9 @@ int main() {
 
 std::string func(ice::coroutine<int, std::string>& coro) {
   std::cout << "Entered coroutine\n";
-  //  ice::co_suspend(coro);
   coro.yield(23);
   std::cout << "Resumed coroutine!\n";
-  return "Ficken";
+  return "Test return";
 }
 
 int main() {

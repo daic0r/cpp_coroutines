@@ -6,7 +6,6 @@
 	extern co_finish
 	
 switch_context:
-	
 	push rbx
 	push rbp
 	push r12
@@ -23,6 +22,7 @@ switch_context:
 	pop r12
 	pop rbp
 	pop rbx
+
 	ret
 	
 co_finish_trampoline:

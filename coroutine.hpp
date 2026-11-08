@@ -5,6 +5,7 @@
 #include <functional>
 #include <cassert>
 #include <optional>
+#include <utility>
 
 extern "C" void switch_context(void** save_rsp, void* load_rsp);
 extern "C" void co_finish_trampoline();
@@ -29,24 +30,6 @@ namespace ice {
   namespace detail {
     void co_invoke();
     extern "C" void co_finish();
-
-    template<typename T>
-    struct data_slot {
-      std::optional<T> data_;
-    public:
-      data_slot() = default;
-      template<typename U = T>
-      data_slot(U&& u) : data_{ std::forward<U>(u) } {}
-
-      void set(T val) { data_ = std::move(val); }
-      T take() { assert(data_); T ret = std::move(*data_); data_.reset(); return ret; }
-      bool empty() const noexcept { return !data_.has_value(); }
-    };
-
-    template<>
-    struct data_slot<void> {
-    };
-
   }
   
 
@@ -62,12 +45,39 @@ namespace ice {
     
   protected:
     coroutine_base(std::function<void(coroutine_base&)> func);
+    coroutine_base(const coroutine_base&) = delete;
+    coroutine_base& operator=(const coroutine_base&) = delete;
+    coroutine_base(coroutine_base&& rhs) noexcept {
+      stack_frame_ = std::exchange(rhs.stack_frame_, nullptr);
+      sp_ = std::exchange(rhs.sp_, nullptr);
+      caller_sp_ = std::exchange(rhs.caller_sp_, nullptr);
+      func_ = std::exchange(rhs.func_, nullptr);
+      done_ = std::exchange(rhs.done_, true);
+    }
+    coroutine_base& operator=(coroutine_base&& rhs) noexcept {
+      coroutine_base copy{ std::move(rhs) };
+      copy.swap(*this);
+      return *this;
+    }
+    
 
   public:
+    void swap(coroutine_base& rhs) noexcept {
+      using std::swap;
+      swap(stack_frame_, rhs.stack_frame_);
+      swap(sp_, rhs.sp_);
+      swap(caller_sp_, rhs.caller_sp_);
+      swap(func_, rhs.func_);
+      swap(done_, rhs.done_);
+
+    }
+
+    friend void swap(coroutine_base& lhs, coroutine_base& rhs) noexcept {
+      lhs.swap(rhs);
+    }
+    
     virtual ~coroutine_base() {
-      if (stack_frame_) {
-	destroy();
-      }
+      destroy();
     }
 
     bool done() const noexcept {
@@ -87,6 +97,7 @@ namespace ice {
     }
 
     void destroy() {
+      assert(done());
       delete[] stack_frame_;
       stack_frame_ = nullptr;
     }
@@ -95,31 +106,44 @@ namespace ice {
 
   template<typename Yield, typename Ret>
   class coroutine : public coroutine_base {
-    detail::data_slot<Yield> yielded_;
-    detail::data_slot<Ret> returned_;
-    
+    std::optional<Yield> yielded_;
+    std::optional<Ret> returned_;
+
+    template<typename F, typename R = Ret>
+    auto run(coroutine_base& c, F f) -> typename std::enable_if_t<!std::is_same_v<R, void>> {
+      returned_ = f(static_cast<coroutine&>(c));
+    }
+
+    template<typename F, typename R = Ret>
+    auto run(coroutine_base& c, F f) -> typename std::enable_if_t<std::is_same_v<R, void>> {
+      f(static_cast<coroutine&>(c));
+    }
+
   public:
     coroutine(std::function<Ret(coroutine&)> func)
       : coroutine_base([f=std::move(func), this](coroutine_base& c) {
+	/*
 	if constexpr (std::is_same_v<Ret, void>) {
 	  f(static_cast<coroutine&>(c));
 	} else {
-	  returned_.set(f(static_cast<coroutine&>(c)));
+	  returned_ = f(static_cast<coroutine&>(c));
 	}
+	*/
+	run(c, std::move(f));
       })
     {
     }
 
     template<typename Y = Yield, typename = std::enable_if_t<!std::is_same_v<Y, void>>>
     Y get_value() {
-      assert(!yielded_.empty());
-      return yielded_.take();
+      assert(yielded_.has_value());
+      return std::move(*yielded_);
     }
 
     template<typename R = Ret, typename = std::enable_if_t<!std::is_same_v<R, void>>>
     R get_return_value() {
-      assert(!returned_.empty());
-      return returned_.take();
+      assert(returned_.has_value());
+      return std::move(*returned_);
     }
 
     void yield(Yield val) {
