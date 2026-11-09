@@ -6,22 +6,14 @@
 #include <cassert>
 #include <optional>
 #include <utility>
+#include <unistd.h>
+#include <sys/mman.h>
 
 extern "C" void switch_context(void** save_rsp, void* load_rsp);
 extern "C" void co_finish_trampoline();
 
 namespace ice {
-  static constexpr std::size_t STACK_SIZE = 1024*16;
-
-  /*
-  struct coroutine {
-    char *buffer_ptr;
-    void *sp;
-    void *caller_sp;
-    std::function<void(coroutine&)> func;
-    bool done = false;
-  };
-  */
+  static constexpr std::size_t STACK_SIZE = 1024*256;
 
   class coroutine_base;
 
@@ -46,12 +38,14 @@ namespace ice {
     void *sp_{};
     void *caller_sp_{};
     std::function<void(coroutine_base&)> func_{};
-    std::exception_ptr exception_;
+    std::exception_ptr exception_{};
+    std::size_t allocated_size_{};
     bool done_{};
 
   private:
     void destroy() {
-      delete[] stack_frame_;
+      //     delete[] stack_frame_;
+      munmap(stack_frame_, allocated_size_);
       stack_frame_ = nullptr;
     }
     

@@ -13,8 +13,16 @@ switch_context:
 	push r14
 	push r15
 
+	sub     rsp, 8
+	stmxcsr [rsp]           ; MXCSR: 32 bits at offset 0
+	fnstcw  [rsp + 4]       ; x87 control word: 16 bits at offset 4
+
 	mov [rdi], rsp 		; save current rsp for later resumption
 	mov rsp, rsi		; resume other coroutine
+
+	ldmxcsr [rsp]
+	fldcw   [rsp + 4]
+	add     rsp, 8	
 	
 	pop r15
 	pop r14
