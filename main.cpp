@@ -87,7 +87,7 @@ auto fetch_data() {
     void will_suspend() const noexcept {
       mains_future = prom.get_future();
       worker = std::thread([] {
-	std::this_thread::sleep_for(3000ms);
+	std::this_thread::sleep_for(500ms);
 	prom.set_value("#### DATA ####");
       });
     }
@@ -103,6 +103,13 @@ std::string await_test(ice::coroutine<std::string>& coro) {
   const auto data = coro.await(fetch_data());
   std::cout << "Data was received: \"" << data << "\"\n";
   return data;
+}
+
+int generator(ice::coroutine<void, int>& coro) {
+  int i{};
+  while (true) {
+    coro.yield(i++);
+  }
 }
 
 		       
@@ -132,6 +139,11 @@ ice::current_coro = &coro;
   worker->join();
   await_coro.resume();
   std::cout << "Function result: " << await_coro.get_return_value() << "\n";
+  std::cout << "\n";
+
+  ice::coroutine<void, int> gen(generator);
+  for (std::size_t i{}; i < 20; ++i)
+    std::cout << gen.next() << "\n";
 
   return 0;
 }

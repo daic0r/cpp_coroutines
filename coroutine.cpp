@@ -5,7 +5,12 @@ namespace ice {
 
   namespace detail {
     void co_invoke() {
-      current_coro->func_(*current_coro);
+      try {
+	current_coro->func_(*current_coro);
+      }
+      catch (...) {
+	current_coro->exception_ = std::current_exception();
+      }
     }
     extern "C" void co_finish() {
       current_coro->done_ = true;

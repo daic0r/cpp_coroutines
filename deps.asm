@@ -29,3 +29,5 @@ co_finish_trampoline:
 
 	call co_finish wrt ..plt
 	ud2
+
+section .note.GNU-stack noalloc noexec nowrite progbits
