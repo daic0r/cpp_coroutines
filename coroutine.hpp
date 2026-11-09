@@ -27,7 +27,16 @@ namespace ice {
     struct type_identity {
       using type = T;
     };
+
+    struct coroutine_canceled_signal {};
   }
+
+  enum class coroutine_state {
+    NOT_STARTED,
+    SUSPENDED,
+    CANCELED,
+    DONE
+  };
   
 
   class coroutine_base {
@@ -40,11 +49,15 @@ namespace ice {
     std::function<void(coroutine_base&)> func_{};
     std::exception_ptr exception_{};
     std::size_t allocated_size_{};
-    bool done_{};
+    coroutine_state state_{ coroutine_state::NOT_STARTED };
 
   private:
     void destroy() {
       //     delete[] stack_frame_;
+      if (state_ != coroutine_state::DONE) {
+	state_ = coroutine_state::CANCELED;
+	resume();
+      }
       munmap(stack_frame_, allocated_size_);
       stack_frame_ = nullptr;
     }
@@ -63,11 +76,11 @@ namespace ice {
     }
 
     bool done() const noexcept {
-      return done_;
+      return state_ == coroutine_state::DONE;
     }
 
     void resume() {
-      assert(!done());
+      assert(state_ != coroutine_state::DONE);
       const auto pPrev = current_coro;
       current_coro = this;
       switch_context(&caller_sp_, sp_);
@@ -78,7 +91,11 @@ namespace ice {
     }
 
     void suspend() {
+      state_ = coroutine_state::SUSPENDED;
       switch_context(&sp_, caller_sp_);
+      if (state_ == coroutine_state::CANCELED) {
+	throw detail::coroutine_canceled_signal{};
+      }
     }
 
   };
@@ -173,7 +190,6 @@ namespace ice {
 	return a.get_result();
       a.will_suspend();
       this->suspend();
-      //      assert(a.result_available());
       return a.get_result();
     }
   };

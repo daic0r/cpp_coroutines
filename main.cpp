@@ -98,11 +98,25 @@ auto fetch_data() {
   return awaitable{};
 }
 
+struct proof_of_destruction {
+  ~proof_of_destruction() {
+    std::cout << "STACK UNWINDED\n";
+  }
+};
+
 std::string await_test(ice::coroutine<std::string>& coro) {
   std::cout << "await_test: About to receive data which will take some time\n";
   const auto data = coro.await(fetch_data());
   std::cout << "Data was received: \"" << data << "\"\n";
   return data;
+}
+
+void cancel_test(ice::coroutine<void>& coro) {
+  proof_of_destruction proof{};
+  
+  std::cout << "Entered cancel_test\n";
+  coro.suspend();
+  std::terminate();
 }
 
 int generator(ice::coroutine<void, int>& coro) {
@@ -144,6 +158,13 @@ ice::current_coro = &coro;
   ice::coroutine<void, int> gen(generator);
   for (std::size_t i{}; i < 20; ++i)
     std::cout << gen.next() << "\n";
-
+  std::cout << "\n\n";
+  
+  {
+    ice::coroutine<void> cancellor(cancel_test);
+    cancellor.resume();
+  }
+  // coroutine prematurely destructed here, should still unwind the stack
+  
   return 0;
 }

@@ -9,12 +9,14 @@ namespace ice {
       try {
 	current_coro->func_(*current_coro);
       }
+      catch (const detail::coroutine_canceled_signal&) {
+      }
       catch (...) {
 	current_coro->exception_ = std::current_exception();
       }
     }
     extern "C" void co_finish() {
-      current_coro->done_ = true;
+      current_coro->state_ = coroutine_state::DONE;
       switch_context(&current_coro->sp_, current_coro->caller_sp_);
       std::abort(); // should never be reached
     }
