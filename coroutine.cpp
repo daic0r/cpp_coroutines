@@ -6,6 +6,9 @@ namespace ice {
 
   namespace detail {
     void co_invoke() {
+      if (current_coro->state_ == coroutine_state::CANCELED)
+	return;
+      
       try {
 	current_coro->func_(*current_coro);
       }
@@ -34,7 +37,8 @@ namespace ice {
       void* mem = mmap(nullptr, allocated_size_, PROT_READ | PROT_WRITE,
 		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
       if (mem == MAP_FAILED) throw std::bad_alloc{};
-      mprotect(mem, guard, PROT_NONE);        // lowest page: stack grows down into it
+      if (mprotect(mem, guard, PROT_NONE) != 0)        // lowest page: stack grows down into it
+	throw std::bad_alloc{};
 
       stack_frame_ = static_cast<char*>(mem);    
       std::ptrdiff_t aligned_top = reinterpret_cast<std::ptrdiff_t>(stack_frame_ + allocated_size_) & ~std::ptrdiff_t{15};

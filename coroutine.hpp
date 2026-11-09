@@ -33,6 +33,7 @@ namespace ice {
 
   enum class coroutine_state {
     NOT_STARTED,
+    RUNNING,
     SUSPENDED,
     CANCELED,
     DONE
@@ -53,11 +54,6 @@ namespace ice {
 
   private:
     void destroy() {
-      //     delete[] stack_frame_;
-      if (state_ != coroutine_state::DONE) {
-	state_ = coroutine_state::CANCELED;
-	resume();
-      }
       munmap(stack_frame_, allocated_size_);
       stack_frame_ = nullptr;
     }
@@ -72,6 +68,7 @@ namespace ice {
   public:
     
     virtual ~coroutine_base() {
+      assert(state_ == coroutine_state::DONE);
       destroy();
     }
 
@@ -79,10 +76,30 @@ namespace ice {
       return state_ == coroutine_state::DONE;
     }
 
+    coroutine_state state() const noexcept {
+      return state_;
+    }
+
+    void cancel() {
+      if (state_ == coroutine_state::DONE || stack_frame_ == nullptr)
+	return;
+      state_ = coroutine_state::CANCELED;
+      try {
+	// cancel() will be called from the dtor, so we catch
+	// all exceptions here in order not to throw out of the
+	// dtor
+	resume();
+      }
+      catch (...) {}
+    }
+
     void resume() {
       assert(state_ != coroutine_state::DONE);
       const auto pPrev = current_coro;
       current_coro = this;
+      if (state_ != coroutine_state::CANCELED) {
+	state_ = coroutine_state::RUNNING;
+      }
       switch_context(&caller_sp_, sp_);
       current_coro = pPrev;
       
@@ -91,7 +108,8 @@ namespace ice {
     }
 
     void suspend() {
-      state_ = coroutine_state::SUSPENDED;
+      if (state_ != coroutine_state::CANCELED)
+	state_ = coroutine_state::SUSPENDED;
       switch_context(&sp_, caller_sp_);
       if (state_ == coroutine_state::CANCELED) {
 	throw detail::coroutine_canceled_signal{};
@@ -146,7 +164,7 @@ namespace ice {
 
   public:
     coroutine(std::function<Ret(coroutine&)> func)
-      : coroutine_data_layer<Ret, Yield>([f=std::move(func), this](coroutine_base& c) {
+      : coroutine_data_layer<Ret, Yield>([f=std::move(func), this](coroutine_base& c) mutable {
 	/*p
 	if constexpr (std::is_same_v<Ret, void>) {
 	  f(static_cast<coroutine&>(c));
@@ -157,6 +175,12 @@ namespace ice {
 	run(c, std::move(f));
       })
     {
+    }
+
+    ~coroutine() {
+      if (this->state() == coroutine_state::SUSPENDED) {
+	this->cancel();
+      }
     }
 
     template<typename Y = Yield, typename = std::enable_if_t<!std::is_same_v<Y, void>>>
