@@ -1,7 +1,9 @@
 #ifndef COROUTINE_HPP
 #define COROUTINE_HPP
 
-#include <iostream>
+#include <exception>
+#include <new>
+#include <cstdlib>
 #include <functional>
 #include <cassert>
 #include <optional>
@@ -178,9 +180,8 @@ namespace ice {
     }
 
     ~coroutine() {
-      if (this->state() == coroutine_state::SUSPENDED) {
-	this->cancel();
-      }
+      assert(this->state() != coroutine_state::RUNNING);
+      this->cancel();
     }
 
     template<typename Y = Yield, typename = std::enable_if_t<!std::is_same_v<Y, void>>>

@@ -91,7 +91,7 @@ auto fetch_data() {
 	prom.set_value("#### DATA ####");
       });
     }
-    std::string get_result() const noexcept {
+    std::string get_result() const {
       return mains_future.get();
     }
   };
@@ -131,7 +131,7 @@ int main() {
 			  
   auto coro = ice::coroutine<std::string, int>(func);
   /*
-ice::current_coro = &coro;
+  ice::current_coro = &coro;
   ice::co_resume(coro);
   std::cout << "Coroutine suspended, we can do more work in main\n";
   ice::co_resume(coro);
